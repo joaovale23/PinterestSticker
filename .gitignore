@@ -1,0 +1,25 @@
+# Ambientes virtuais
+.venv/
+venv/
+env/
+
+# Saída do programa
+downloads/
+
+# Cache de bytecode Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Pacotes / build
+*.egg-info/
+build/
+dist/
+
+# Configurações de IDE/editor
+.vscode/
+.idea/
+*.swp
+
+# Sistema operacional
+.DS_Store
