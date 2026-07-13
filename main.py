@@ -6,8 +6,10 @@ import argparse
 import sys
 import time
 
+from app_export import export_for_app
 from converter import convert_to_stickers
 from downloader import download_images
+from packer import build_packs
 from scraper import PinterestScraper
 
 
@@ -20,6 +22,23 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--webp", action="store_true",
         help="Converter imagens para figurinhas WEBP 512x512",
+    )
+    parser.add_argument(
+        "--pack", action="store_true",
+        help="Montar pacote(s) .wastickers para importar no WhatsApp (implica --webp)",
+    )
+    parser.add_argument(
+        "--pack-title", help="Título do pacote de figurinhas",
+    )
+    parser.add_argument(
+        "--pack-author", help="Autor do pacote de figurinhas",
+    )
+    parser.add_argument(
+        "--app-export", metavar="ASSETS_DIR",
+        help=(
+            "Exporta os pacotes para a pasta 'assets' do app oficial "
+            "WhatsApp/stickers (implica --webp)"
+        ),
     )
     parser.add_argument(
         "--limit", type=int,
@@ -46,10 +65,32 @@ def _resolve_options(args: argparse.Namespace) -> dict:
 
     dest = args.dest or _prompt("Pasta de destino: ", "downloads")
 
-    if args.webp:
+    if args.pack:
+        pack = True
+    else:
+        pack = _prompt(
+            "Montar pacote .wastickers para o WhatsApp? (s/n): ", "n"
+        ).lower().startswith("s")
+
+    app_export = args.app_export
+    if app_export is None:
+        app_export = _prompt(
+            "Exportar para o app Android (caminho da pasta assets, vazio = pular): ",
+            "",
+        ) or None
+
+    # Pacotes e exportação exigem figurinhas WEBP, então implicam a conversão.
+    if args.webp or pack or app_export:
         webp = True
     else:
         webp = _prompt("Converter para WEBP? (s/n): ", "n").lower().startswith("s")
+
+    pack_title = args.pack_title
+    pack_author = args.pack_author
+    if (pack or app_export) and pack_title is None:
+        pack_title = _prompt("Título do pacote: ", "Figurinhas")
+    if (pack or app_export) and pack_author is None:
+        pack_author = _prompt("Autor/publisher do pacote: ", "PinterestSticker")
 
     if args.limit is not None:
         limit = args.limit
@@ -60,7 +101,16 @@ def _resolve_options(args: argparse.Namespace) -> dict:
         except ValueError:
             limit = 0
 
-    return {"url": url, "dest": dest, "webp": webp, "limit": max(limit, 0)}
+    return {
+        "url": url,
+        "dest": dest,
+        "webp": webp,
+        "pack": pack,
+        "app_export": app_export,
+        "pack_title": pack_title or "Figurinhas",
+        "pack_author": pack_author or "PinterestSticker",
+        "limit": max(limit, 0),
+    }
 
 
 def main() -> None:
@@ -80,9 +130,19 @@ def main() -> None:
 
     result = download_images(urls, opts["dest"])
 
-    stickers = 0
+    stickers: list[str] = []
     if opts["webp"] and result.paths:
         stickers = convert_to_stickers(result.paths)
+
+    packs: list[str] = []
+    if opts["pack"] and stickers:
+        packs = build_packs(stickers, opts["pack_title"], opts["pack_author"])
+
+    exported: list[str] = []
+    if opts["app_export"] and stickers:
+        exported = export_for_app(
+            stickers, opts["app_export"], opts["pack_title"], opts["pack_author"]
+        )
 
     elapsed = time.time() - start
     print("\n=== Estatísticas ===")
@@ -90,7 +150,15 @@ def main() -> None:
     print(f"Imagens baixadas:    {result.downloaded}")
     print(f"Imagens ignoradas:   {result.skipped}")
     if opts["webp"]:
-        print(f"Figurinhas geradas:  {stickers}")
+        print(f"Figurinhas geradas:  {len(stickers)}")
+    if opts["pack"]:
+        print(f"Pacotes montados:    {len(packs)}")
+        for pack_path in packs:
+            print(f"  - {pack_path}")
+    if opts["app_export"]:
+        print(f"Pacotes exportados:  {len(exported)} -> {opts['app_export']}")
+        for identifier in exported:
+            print(f"  - {identifier}")
     print(f"Tempo total:         {elapsed:.1f}s")
 
 
